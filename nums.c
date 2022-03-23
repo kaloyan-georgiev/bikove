@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <math.h>
+#include <stdlib.h>
 #include "list.h"
 #include "nums.h"
 
@@ -12,8 +13,20 @@ int digit_count(int n) {
 	return count;
 }
 
+//Start from 0 RTL
 char get_digit(int num, int n) {
 	return (num / (int)pow(10, n)) % 10;
+}
+
+char* itoa(int num) {
+	int dc = digit_count(num);
+	char* string = malloc(dc+1);
+	int i=0;
+	while(i<dc) {
+		string[i] = (get_digit(num, dc-i-1) + '0');
+	}
+	string[dc-1] = 0;
+	return string;
 }
 
 struct list_t num_to_list(int num, int dc) {
@@ -74,7 +87,8 @@ int check_kravi(int number, int guess, int dc) {
 
 
 struct answer_t check_number(int number, int guess, int dc) {
-	struct answer_t answer = {0, 0};
+	struct answer_t answer = {0, 0, 0};
+	answer.number = number;
 	answer.kravi = check_kravi(number, guess, dc);
 	answer.bikove = check_bikove(number, guess, dc);
 	return answer;

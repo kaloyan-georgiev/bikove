@@ -1,33 +1,15 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include "net.h"
 #include "nums.h"
+#include "list.h"
 
 #define NETWORK 1
 #define NUMBERS 2
-
-int SOCKET_DES;
-
-void close_server() {
-	printf("Closing server...\n");
-	close(SOCKET_DES);
-}
-
-int bind_socket(int descriptor, unsigned int address, unsigned int port) {
-	struct sockaddr_in address_s;
-	bzero((char*)&address_s, sizeof(address_s));
-	struct in_addr iaddress = {address};
-	address_s.sin_family = AF_INET;
-	address_s.sin_addr = iaddress;
-	address_s.sin_port = htons(port);
-	if(bind(descriptor, (struct sockaddr*)&address_s, sizeof(address_s)) < 0) {
-		return -1;
-	}
-	return 0;
-}
-
-
+char** parse_cmdline(char* cmdline);
+void complex_free(char*** tofree);
 int main() {
 	int test_mode = NETWORK;
 	if(test_mode == NUMBERS) {
@@ -40,27 +22,99 @@ int main() {
 	}
 	else if(test_mode == NETWORK) {	
 	
-		printf("Choose playing mode (h - host, j - join):\n");
-		//printf("%d", INADDR_ANY);
+		printf("Choose playing mode (h <number length> - host, j <ip> <port> - join):\n");
+
 		char accept = 1;
 		while(accept) {
-			char c = getchar();
-			if(c == '\n') {
+			char command[127];
+			fgets(command, 127, stdin);
+			char** arguments = parse_cmdline(command);
+			//If input is only \n
+			if(arguments[0][0] == 0) {
 				continue;
 			}
 			accept = 0;
-			switch(c) {
-				case 'h':
-					host_game();
-					break;
-				case 'j':
-					join_game(INADDR_ANY, 1047);
-					break;
-				default:
-					accept = 1;
-					printf("Invalid command\n");
-				break;
+			int argslen = 0;
+			for(int i=0; arguments[i] != NULL; i++) {
+				argslen++;
 			}
+			if(strcmp(arguments[0], "h") == 0) {
+				if(argslen < 2) {
+					printf("Enter number length\n");
+					accept = 1;
+					continue;
+				}
+				int NUMLEN = atoi(arguments[1]);
+				int socket = host_game();
+				send_all(socket, &NUMLEN, sizeof(NUMLEN));
+				printf("Now enter your number with length %d:\n", NUMLEN);
+				int repeat = 0;
+				int MYNUM = enter_number(NUMLEN, repeat);
+				printf("YOUR NUMBER IS %d\n", MYNUM);
+				printf("Host is first to guess\n");	
+										
+				int RUNNING = 1, STOPPED = 0;
+				int game = RUNNING;
+				struct list_t guesses;
+				int guess_count = 0;
+				
+				while(game == RUNNING) {
+					printf("Enter guess no %d for your opponent's number:\n", ++guess_count);
+					int guess = enter_number(NUMLEN, repeat);
+					//guesses.push_back(guess);
+					send_all(socket, &guess, sizeof(guess));
+					struct answer_t* answer_back = receive_all(socket);
+					printf("Your guess %d got %d bulls and %d cows\n", guess, answer_back->bikove, answer_back->kravi);
+					printf("Waiting for opponent's guess...\n");
+					
+					int* opponent_guess = receive_all(socket);
+					printf("Your opponent's guess is %d\n", *opponent_guess);
+					struct answer_t answer = check_number(MYNUM, *opponent_guess, NUMLEN);
+					send_all(socket, &answer, sizeof(answer));
+					free(opponent_guess);
+					
+				}
+				close(socket);
+			}
+			else if(strcmp(arguments[0], "j") == 0) {
+				int socket = join_game(0, 1047);
+				int* NUMLEN = receive_all(socket);
+				printf("Required number length is %d\n", *NUMLEN);
+				printf("Now enter your number with length %d:\n", *NUMLEN);
+				int repeat = 0;
+				int MYNUM = enter_number(*NUMLEN, repeat);	
+				printf("YOUR NUMBER IS %d\n", MYNUM);
+				printf("Host is first to guess\n");	
+										
+				int RUNNING = 1, STOPPED = 0;
+				int game = RUNNING;
+				struct list_t guesses;
+				int guess_count = 0;
+				
+				while(game == RUNNING) {
+					printf("Waiting for opponent's guess...\n");
+					int* opponent_guess = receive_all(socket);
+					printf("Your opponent's guess is %d\n", *opponent_guess);
+					struct answer_t answer = check_number(MYNUM, *opponent_guess, *NUMLEN);
+					send_all(socket, &answer, sizeof(answer));
+					free(opponent_guess);
+				
+					printf("Enter guess no %d for your opponent's number:\n", ++guess_count);
+					int guess = enter_number(*NUMLEN, repeat);
+					//guesses.push_back(guess);
+					send_all(socket, &guess, sizeof(guess));
+					struct answer_t* answer_back = receive_all(socket);
+					printf("Your guess %d got %d bulls and %d cows\n", guess, answer_back->bikove, answer_back->kravi);
+					
+				}
+				free(NUMLEN);
+				close(socket);
+			}
+			else {
+				accept = 1;
+				printf("Invalid command\n");
+			}
+			complex_free(&arguments);
 		}
 	}
 	exit(0);

@@ -10,8 +10,9 @@
 #include <unistd.h>
 
 
+char* ACK_MSG = "BSUC";
 
-int send_all(int sockfd, char* msg, size_t len) {
+int send_all(int sockfd, void* msg, size_t len) {
 	int res;
 	if((res = send(sockfd, msg, len, 0)) < len) {
 		if(res < 0) {
@@ -24,23 +25,23 @@ int send_all(int sockfd, char* msg, size_t len) {
 	return 0;
 }
 
-char* receive_all(int sockfd) {
-	int res, offset = 0, readsize = 50, bufsize=300;
-	char* buf = malloc(bufsize);
-	while((res = recv(sockfd, buf+offset, readsize, 0)) == readsize) {
-		if(res < 0) {
-			perror("Error on receiving");
-		}
-		offset += res;
-		if(offset+readsize >= bufsize) {
-			buf = realloc(buf, (bufsize*= 2));
-		}
+void* receive_all(int sockfd) {
+	int res, bufsize=255;
+	void* buf = malloc(bufsize);
+	if((res = recv(sockfd, buf, bufsize, 0)) < 0) {
+		perror("receive_all: Error on receiving");
 	}
 	return buf;
 }
 
 int sendstr(int sockfd, char* str) {
 	return send_all(sockfd, str, strlen(str)+1);
+}
+
+void print_message(int socketdes) {
+	char* received = receive_all(socketdes);
+	printf("%s", received);
+	free(received);
 }
 
 struct sockaddr_in new_Isockaddr(unsigned int address, int port) {
@@ -56,7 +57,7 @@ struct sockaddr_in new_Isockaddr(unsigned int address, int port) {
 	return socket_address;
 }
 
-void host_game() {
+int host_game() {
 	int PORT, socketdes = socket(PF_INET, SOCK_STREAM, 0);
 	if(socketdes < 0) {
 		perror("Error on creating socket");
@@ -76,24 +77,23 @@ void host_game() {
 		close(socketdes);
 		exit(1);
 	}
-
+	
+	int clcon;
 	socklen_t client_socklen;
 	printf("Waiting for other player on %d:%d\n", ADDRESS, PORT);
-	//second argument is queue length
 	fflush(stdout);
-	int clcon;
 	
-	
+	//second argument is queue length
 	listen(socketdes, 1);
 	
 	if((clcon = accept(socketdes, (struct sockaddr*)&client_address, &client_socklen)) < 0) {
 		perror("Error on accepting requests");
 		exit(1);
 	};
-	
+	close(socketdes);
 	printf("Accepted request from %u:%d\n", ntohs(client_address.sin_addr.s_addr), ntohs(client_address.sin_port));
 	
-	if(sendstr(clcon, "B: SUC") < 0) {
+	if(sendstr(clcon, ACK_MSG) < 0) {
 		perror("Error on sending acknowledgement to client");	
 	}
 	printf("Sent acknowledgement\n");
@@ -105,19 +105,14 @@ void host_game() {
 		free(received);
 	}
 	
-	//listen(socketdes, 0);
 	
-	{
-		char* received = receive_all(clcon);
-		printf("%s", received);
-		free(received);
-	}
+
+	sendstr(clcon, "Hello from server!\n");
 	
-	close(socketdes);
-	close(clcon);
+	return clcon;
 }
 
-void join_game(unsigned int server_address, int server_port) {
+int join_game(unsigned int server_address, int server_port) {
 	int THIS_PORT, clientdes = socket(PF_INET, SOCK_STREAM, 0);
 	if(clientdes < 0) {
 		perror("Error on creating socket");
@@ -143,21 +138,19 @@ void join_game(unsigned int server_address, int server_port) {
 	
 	char* checkrec = receive_all(clientdes);
 	printf("Received from host: %s\n", checkrec);
-	if(strcmp(checkrec, "B: SUC") == 0) {
+	if(strcmp(checkrec, ACK_MSG) == 0) {
 		printf("Successfully connected to %u:%d\n", server_address, server_port);
 	} else {
 		printf("Bad connection\n");
 	}
 	free(checkrec);
 	fflush(stdout);
-	char message[] = "Hello, abcdefghijklmnop\n";
-	send_all(clientdes, message, strlen(message)+1);
+	sendstr(clientdes, "Hello from client!\n");
 	printf("Sent message to %u:%u\n", server_socket.sin_addr.s_addr, ntohs(server_socket.sin_port));
 	
-	char message1[] = "Second message from player2\n";
-	send_all(clientdes, message1, strlen(message1)+1);
-	printf("Sent message 2 to %u:%u\n", server_socket.sin_addr.s_addr, ntohs(server_socket.sin_port));
+	print_message(clientdes);
+	printf("Received message from %u:%u\n", server_socket.sin_addr.s_addr, ntohs(server_socket.sin_port));
 	
-	close(clientdes);
+	return clientdes;
 }
 
